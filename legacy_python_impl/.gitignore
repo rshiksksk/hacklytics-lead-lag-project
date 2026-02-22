@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# PyTorch / model files
+*.pt
+*.pth
+
+# Pickle and large embeddings
+*.pkl
+node2vec_embeddings.pkl
+
+# OS files
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+LIQ_TOVER_D_combined.csv
+TRD_Dalyr_combined.csv
+Supply_Chain _data.csv

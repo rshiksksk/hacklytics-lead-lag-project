@@ -1,0 +1,104 @@
+HT-GNN PROJECT PLAN: LEAD-LAG INFORMATION DIFFUSION IN CHINESE A-SHARE MARKET
+================================================================================
+
+GOAL
+----
+Predict whether a stock will outperform or underperform the equal-weighted market
+average using supply chain network relationships and daily market data. Framed as
+a three-class classification task (outperform / neutral / underperform).
+
+
+DATA SOURCES
+------------
+- Daily market data (2016-05-01 to 2025-12-31): returns, market cap, turnover,
+  price limit status
+- Supply chain data: annual snapshots of supplier-customer relationships between
+  listed and unlisted firms
+
+
+KEY DESIGN DECISIONS
+--------------------
+
+Node Features (listed firms):
+  - Demeaned daily return (subtract equal-weighted market mean each day)
+  - Log market cap
+  - Abnormal turnover: ToverOs(t) / 20-day rolling mean - 1
+  - Price limit status (1 / 0 / -1)
+  - Node2Vec embedding (concatenated)
+
+Node Features (unlisted/private firms):
+  - Node2Vec structural embedding only
+
+Graph:
+  - Directed supply chain graph, updated annually each May 1
+  - Bidirectional edges (both supplier->customer and customer->supplier directions)
+  - Edge features: relationship type + rank (1-5, importance of partner)
+  - Includes both listed and unlisted firms as nodes
+  - Look-ahead bias rule: for dates on/after May 1 of year Y, use supply chain
+    snapshot from Dec 31 of year Y-1
+
+Target Variable:
+  - Three classes based on h-day cumulative demeaned future return:
+      * Outperform (2): return > +0.5 * expanding_std(t)
+      * Neutral    (1): return within +/- 0.5 * expanding_std(t)
+      * Underperform(0): return < -0.5 * expanding_std(t)
+  - expanding_std(t): std of all past h-day cumulative demeaned returns
+    from 2016-05-01 up to date t (no look-ahead bias)
+  - Threshold scales automatically with horizon h and volatility regime
+  - k=0.5 chosen for balanced class distribution (~1/3 each class)
+
+Prediction Horizons:
+  - Four separate experiments: h = 1, 3, 5, 20 days
+  - Non-overlapping training windows (stride = h)
+
+Rolling Window:
+  - T = 20 past trading days fed into LSTM
+
+
+MODEL ARCHITECTURE (HT-GNN)
+----------------------------
+
+  [GraphSAGE]   -- aggregates neighbor signals at each timestep
+       |
+  [LSTM]        -- learns temporal dynamics and lag structure over T=20 days
+       |
+  [Linear head] -- three-class classification (outperform / neutral / underperform)
+
+  Loss: multi-class cross-entropy (with class weighting if imbalance persists)
+
+
+EVALUATION
+----------
+  - Train: 2016-2021 | Val: 2022-2023 | Test: 2024-2025
+  - Metrics: accuracy, macro F1, AUC
+  - Economic check: event study
+      * Define events as dates when the model generates a prediction signal
+      * For each event, track demeaned returns (abnormal returns) over
+        subsequent days (t+1 to t+N)
+      * Compute average cumulative abnormal returns (CARs) separately for
+        predicted outperformers vs. predicted underperformers
+      * Plot CAR curves to reveal when the effect materializes and how long
+        it persists -- directly tests the lead-lag hypothesis
+
+
+FILE STRUCTURE
+--------------
+  data_prep.py        -- merge daily data, compute features
+  supply_chain.py     -- parse graph, apply look-ahead rule
+  node2vec_train.py   -- Node2Vec embeddings per annual snapshot
+  dataset.py          -- rolling window dataset assembly
+  model.py            -- HT-GNN architecture
+  train.py            -- training loop
+  evaluate.py         -- metrics + event study (CAR curves)
+
+
+NOTES
+-----
+  - Node2Vec embedding dimension: 64
+  - Node2Vec embeddings may shift coordinate systems across annual snapshots
+    (acceptable for now; Procrustes alignment is a potential future fix)
+  - Market cap in raw data is in thousands (RMB); take log after loading
+  - Supply chain EndDate format is MM/DD/YY -- requires careful parsing
+  - StateTypeCode deduplication: prefer consolidated (1), fall back to
+    parent-only (2) if consolidated is missing for a given relationship
+================================================================================
